@@ -1,0 +1,53 @@
+name: buildrlab-marketing-os
+services:
+  app:
+    build: .
+    ports: ["127.0.0.1:${APP_PORT:-8030}:8030"]
+    environment:
+      PORT: 8030
+      DB_PATH: /app/runtime/app.sqlite
+      CMS_URL: http://cms:8031
+      CMS_PUBLIC_URL: http://localhost:${CMS_PORT:-8031}
+      CMS_KEY: ${CMS_KEY:-local-demo-only}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:1.5b}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes: ["workspace:/app/runtime"]
+    depends_on:
+      cms: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8030/api/health')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    security_opt: ["no-new-privileges:true"]
+  cms:
+    build: .
+    command: ["python", "-m", "app.server", "cms"]
+    ports: ["127.0.0.1:${CMS_PORT:-8031}:8031"]
+    environment:
+      PORT: 8031
+      DB_PATH: /app/runtime/cms.sqlite
+      CMS_KEY: ${CMS_KEY:-local-demo-only}
+    volumes: ["cms-content:/app/runtime"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8031/api/health')",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    security_opt: ["no-new-privileges:true"]
+volumes:
+  workspace:
+  cms-content:

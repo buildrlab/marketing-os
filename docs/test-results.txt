@@ -1,0 +1,25 @@
+test_approval_requires_attestation_and_review_note_invalidates (test_workflow.WorkflowTest.test_approval_requires_attestation_and_review_note_invalidates) ... ok
+test_basic_pii_and_invalid_citations_block (test_workflow.WorkflowTest.test_basic_pii_and_invalid_citations_block) ... ok
+test_cms_refuses_older_revision_and_slug_collision (test_workflow.WorkflowTest.test_cms_refuses_older_revision_and_slug_collision) ... ok
+test_cms_rejects_same_key_with_changed_content (test_workflow.WorkflowTest.test_cms_rejects_same_key_with_changed_content) ... ok
+test_cms_rejects_unseen_old_revision (test_workflow.WorkflowTest.test_cms_rejects_unseen_old_revision) ... ok
+test_content_tampering_invalidates_hash (test_workflow.WorkflowTest.test_content_tampering_invalidates_hash) ... ok
+test_durable_state_survives_reopening (test_workflow.WorkflowTest.test_durable_state_survives_reopening) ... ok
+test_edit_invalidates_approval_and_preserves_live_page (test_workflow.WorkflowTest.test_edit_invalidates_approval_and_preserves_live_page) ... ok
+test_happy_path_publishes_real_page_and_is_idempotent (test_workflow.WorkflowTest.test_happy_path_publishes_real_page_and_is_idempotent) ... ok
+test_invalid_model_output_does_not_fall_back_to_sample (test_workflow.WorkflowTest.test_invalid_model_output_does_not_fall_back_to_sample) ... ok
+test_local_model_uses_schema_and_reports_actual_usage (test_workflow.WorkflowTest.test_local_model_uses_schema_and_reports_actual_usage) ... ok
+test_lost_cms_ack_retry_does_not_duplicate (test_workflow.WorkflowTest.test_lost_cms_ack_retry_does_not_duplicate) ... ok
+test_parallel_publish_is_one_cms_write (test_workflow.WorkflowTest.test_parallel_publish_is_one_cms_write) ... ok
+test_prompt_version_is_pinned_and_rollback_supported (test_workflow.WorkflowTest.test_prompt_version_is_pinned_and_rollback_supported) ... ok
+test_publish_without_approval_is_rejected (test_workflow.WorkflowTest.test_publish_without_approval_is_rejected) ... ok
+test_render_escapes_html_and_json_script_breakout (test_workflow.WorkflowTest.test_render_escapes_html_and_json_script_breakout) ... ok
+test_sources_are_quarantined_before_generation (test_workflow.WorkflowTest.test_sources_are_quarantined_before_generation) ... ok
+test_stale_editor_and_reviewer_cannot_overwrite (test_workflow.WorkflowTest.test_stale_editor_and_reviewer_cannot_overwrite) ... ok
+test_unauthorized_and_cross_origin_writes_rejected (test_workflow.WorkflowTest.test_unauthorized_and_cross_origin_writes_rejected) ... ok
+test_unsupported_claim_blocks_approval_until_corrected (test_workflow.WorkflowTest.test_unsupported_claim_blocks_approval_until_corrected) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 10.646s
+
+OK

@@ -1,0 +1,41 @@
+[
+  {
+    "id": "product",
+    "title": "Product & capabilities",
+    "category": "Product",
+    "version": 1,
+    "updated": "2026-10-29",
+    "content": "Northstar is a fictional customer operations platform. It brings support requests, help articles and approval workflows into one workspace. Teams can assign owners, keep an activity history and publish approved help content. Northstar supports role-based access to its workspace. Its content workflow separates drafting, review and publication.",
+    "facts": [
+      "Northstar brings support requests, help articles and approval workflows into one workspace.",
+      "Teams can assign owners, keep an activity history and publish approved help content.",
+      "Northstar supports role-based access to its workspace.",
+      "Its content workflow separates drafting, review and publication."
+    ]
+  },
+  {
+    "id": "voice",
+    "title": "Brand voice & editorial rules",
+    "category": "Brand",
+    "version": 1,
+    "updated": "2026-10-29",
+    "content": "Write for customer operations leaders. Be clear, useful and specific. Use short paragraphs and descriptive headings. Explain the workflow before naming features. Never invent customer names, endorsements, percentages, pricing or performance guarantees. Require human editorial approval before publication.",
+    "facts": [
+      "Require human editorial approval before publication.",
+      "Never invent customer names, endorsements, percentages, pricing or performance guarantees."
+    ]
+  },
+  {
+    "id": "workflow",
+    "title": "The approved publishing workflow",
+    "category": "Operations",
+    "version": 1,
+    "updated": "2026-10-29",
+    "content": "Start with an agreed audience and a specific question. Use approved product information to prepare a brief. Create a draft and review its sources, metadata and internal links. An editor approves an exact revision. Any later edit needs a new approval. Publish the approved revision and retain an audit record. If delivery fails, retry the same publication key to avoid duplicates.",
+    "facts": [
+      "An editor approves an exact revision. Any later edit needs a new approval.",
+      "Publish the approved revision and retain an audit record.",
+      "If delivery fails, retry the same publication key to avoid duplicates."
+    ]
+  }
+]
