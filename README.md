@@ -75,7 +75,7 @@ docker compose -f compose.yaml -f compose.ollama.yaml up --build -d --wait
 docker compose -f compose.yaml -f compose.ollama.yaml exec ollama ollama pull qwen2.5:1.5b
 ```
 
-This explicitly downloads the model into a persistent volume. The optional overlay uses the official `latest` image; pin an image digest for reproducible deployment. The CPU configuration is portable but can be slow; on a Mac, native Ollama generally makes better use of Apple hardware. The optional service is reachable only inside the Compose network and publishes no host port. Use both `-f` arguments for later start/stop commands when using this option.
+This explicitly downloads the model into a persistent volume. The optional overlay deliberately uses the official `ollama/ollama:latest` image because no tag has been verified for it; pin a tag or image digest in `compose.ollama.yaml` for reproducible deployment. The CPU configuration is portable but can be slow; on a Mac, native Ollama generally makes better use of Apple hardware. The optional service is reachable only inside the Compose network and publishes no host port. Use both `-f` arguments for later start/stop commands when using this option.
 
 ## What a client can inspect
 
@@ -98,6 +98,8 @@ Run the automated workflow suite inside the same Python image:
 docker compose run --rm --no-deps -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -v
 ```
 
+Without Docker, the same suite runs on any Python 3.13 with `python -m unittest discover -s tests -v` from the repository root (no dependencies to install).
+
 Tests use temporary databases and an actual local HTTP CMS server. They do not alter your demo workspace. See [validation notes](docs/validation.md) for the checks actually performed, and [architecture](docs/architecture.md) for design choices and production gaps.
 
 ## Portfolio presentation
@@ -117,6 +119,7 @@ skills/content.json  Workflow definition and prompt versions
 tests/               Isolated workflow integration tests
 docs/                Architecture, validation, demo script and screenshots
 compose.yaml         Two-service local application
+.github/             CI workflow and Dependabot configuration
 compose.ollama.yaml  Optional container-hosted local model
 ```
 
