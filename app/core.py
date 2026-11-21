@@ -132,7 +132,8 @@ class Store:
             self.set_setting('prompt','v1')
 
     def setting(self,key):
-        row=self.db.execute('SELECT value FROM settings WHERE key=?',(key,)).fetchone()
+        with self.lock:
+            row=self.db.execute('SELECT value FROM settings WHERE key=?',(key,)).fetchone()
         return row['value'] if row else None
 
     def set_setting(self,key,value):
@@ -152,10 +153,12 @@ class Store:
         self.db.execute('INSERT INTO events(run_id,kind,data,created) VALUES(?,?,?,?)',(run,kind,json.dumps(details),now()))
 
     def all(self):
-        return [json.loads(r['data']) for r in self.db.execute('SELECT data FROM runs ORDER BY rowid DESC')]
+        with self.lock:
+            return [json.loads(r['data']) for r in self.db.execute('SELECT data FROM runs ORDER BY rowid DESC')]
 
     def history(self):
-        return [{**dict(r),'data':json.loads(r['data'])} for r in self.db.execute('SELECT * FROM events ORDER BY seq DESC LIMIT 200')]
+        with self.lock:
+            return [{**dict(r),'data':json.loads(r['data'])} for r in self.db.execute('SELECT * FROM events ORDER BY seq DESC LIMIT 200')]
 
 class Marketing:
     def __init__(self,store,cms_url='http://127.0.0.1:8031',cms_key=None,seed=True):
@@ -365,4 +368,12 @@ class CMS:
             return {'slug':doc['slug'],'revision':revision,'key':key,'published_at':published,'replayed':False}
 
     def pages(self):
-        return [json.loads(r['data']) for r in self.store.db.execute('SELECT data FROM pages ORDER BY created DESC')]
+        # Same connection as publish(): read under the lock so an in-flight
+        # transaction (and a possible rollback) is never observed.
+        with self.store.lock:
+            return [json.loads(r['data']) for r in self.store.db.execute('SELECT data FROM pages ORDER BY created DESC')]
+
+    def page(self,slug):
+        with self.store.lock:
+            row=self.store.db.execute('SELECT data FROM pages WHERE slug=?',(slug,)).fetchone()
+        return json.loads(row['data']) if row else None

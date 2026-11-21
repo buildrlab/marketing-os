@@ -80,7 +80,7 @@ def make_handler(role,store,marketing=None,cms=None,cms_key=None):
                     if path=='/':
                         return self.respond(200,page_html(pages=cms.pages()),'text/html; charset=utf-8')
                     if path.startswith('/articles/'):
-                        article=next((a for a in cms.pages() if a['slug']==path[len('/articles/'):]),None)
+                        article=cms.page(path[len('/articles/'):])
                         if not article:
                             raise Problem('Article not found.',404)
                         return self.respond(200,page_html(article=article),'text/html; charset=utf-8')

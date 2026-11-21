@@ -3,6 +3,7 @@ import io
 import json
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
@@ -286,6 +287,33 @@ class WorkflowTest(unittest.TestCase):
         rendered=page_html(article=p)
         self.assertNotIn('<img src=x',rendered)
         self.assertIn('\\u003c/script>',rendered)
+
+    def test_pages_reader_does_not_see_uncommitted_transaction(self):
+        inside=threading.Event()
+        def writer():
+            with self.cms_store.lock:
+                db=self.cms_store.db
+                db.execute('BEGIN IMMEDIATE')
+                db.execute("INSERT INTO pages VALUES('aaaaaaaaaaaa','ghost','{\"slug\":\"ghost\"}',1,'now')")
+                inside.set()
+                time.sleep(0.3)
+                db.execute('ROLLBACK')
+        thread=threading.Thread(target=writer)
+        thread.start()
+        inside.wait(5)
+        self.assertEqual(self.cms.pages(),[])  # blocks until the rollback
+        self.assertIsNone(self.cms.page('ghost'))
+        thread.join()
+
+    def test_article_lookup_by_slug(self):
+        r=self.approve(self.draft())
+        self.app.publish(r['id'],{'revision':r['revision']})
+        slug=r['content']['slug']
+        self.assertEqual(self.cms.page(slug)['slug'],slug)
+        self.assertIsNone(self.cms.page('missing'))
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(self.url+'/articles/missing')
+        self.assertEqual(caught.exception.code,404)
 
 if __name__=='__main__':
     unittest.main(verbosity=2)
