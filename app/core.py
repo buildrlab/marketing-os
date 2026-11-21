@@ -44,11 +44,21 @@ def digest(value):
 def slugify(text):
     return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')[:75] or 'article'
 
+# One list of phrases shared by source screening and the draft fact check.
+INJECTION_PATTERNS=r'ignore (?:all |previous |your )?instructions|reveal (?:the |your )?(?:secret|key)|bypass approval'
+INJECTION_RE=re.compile(INJECTION_PATTERNS,re.I)
+_NUMBER_WORD=r'(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion)'
+NUMBER_RE=re.compile(r'\$?\d{1,3}(?:,\d{3})+(?:\.\d+)?%?|\$?\d+(?:\.\d+)?%?|\b'+_NUMBER_WORD+r'(?:[- ]'+_NUMBER_WORD+r')* (?:percent|per cent)\b',re.I)
+
+def numeric_claims(text):
+    """Numbers as written (digits, comma-grouped, currency, or spelled-out percentages), normalised."""
+    return {re.sub(r'[$,]','',m).lower().replace('-',' ') for m in NUMBER_RE.findall(text)}
+
 def screen_sources(candidates):
     """A narrow demonstration filter, not general prompt-injection detection."""
     approved, quarantined = [], []
     for source in candidates:
-        if re.search(r'ignore (?:all |previous |your )?instructions|bypass approval',source['content'],re.I):
+        if INJECTION_RE.search(source['content']):
             quarantined.append(source)
         else:
             approved.append(source)
@@ -96,11 +106,11 @@ def validate_document(doc):
 def checks(doc, sources):
     body = ' '.join([doc['title'],doc['description']] + [s['text'] for s in doc['sections']])
     source_by_id = {s['id']:s for s in sources}
-    numbers = set(re.findall(r'\b\d+(?:\.\d+)?%?',body))
-    supported_numbers = set(re.findall(r'\b\d+(?:\.\d+)?%?',' '.join(s['content'] for s in sources)))
+    numbers = numeric_claims(body)
+    supported_numbers = numeric_claims(' '.join(s['content'] for s in sources))
     unknown_numbers = sorted(numbers-supported_numbers)
     unknown_sources = [s['source_id'] for s in doc['sections'] if s['source_id'] not in source_by_id]
-    suspicious = bool(re.search(r'ignore (?:all |previous |your )?instructions|reveal (?:the |your )?(?:secret|key)|bypass approval',body,re.I))
+    suspicious = bool(INJECTION_RE.search(body))
     pii = bool(re.search(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\b\d{3}-\d{2}-\d{4}\b',body))
     verbatim = all(s['source_id'] in source_by_id and s['text'] in source_by_id[s['source_id']]['content'] for s in doc['sections'])
     return [
