@@ -1,4 +1,5 @@
 import copy
+import http.client
 import io
 import json
 import tempfile
@@ -13,7 +14,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from app.core import CANON, CMS, Marketing, Problem, Store, checks, cms_error_message, request_json, screen_sources
-from app.server import make_handler, page_html
+from app.server import host_allowed, make_handler, page_html
 
 KEY='test-only-key-not-a-secret'
 
@@ -314,6 +315,91 @@ class WorkflowTest(unittest.TestCase):
         with self.assertRaises(HTTPError) as caught:
             urlopen(self.url+'/articles/missing')
         self.assertEqual(caught.exception.code,404)
+
+class HttpLayerTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        self.store=Store(Path(self.tmp.name)/'app.sqlite')
+        # Nothing listens on this CMS URL, so /api/state reports the CMS as down.
+        self.app=Marketing(self.store,'http://127.0.0.1:9',KEY,seed=False)
+        self.server=ThreadingHTTPServer(('127.0.0.1',0),make_handler('app',self.store,marketing=self.app))
+        threading.Thread(target=self.server.serve_forever,daemon=True).start()
+        self.port=self.server.server_port
+        self.url=f'http://127.0.0.1:{self.port}'
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.store.db.close()
+        self.tmp.cleanup()
+
+    def raw(self,method,path,body=None,headers=None):
+        conn=http.client.HTTPConnection('127.0.0.1',self.port,timeout=5)
+        conn.putrequest(method,path,skip_host='Host' in (headers or {}))
+        for k,v in (headers or {}).items():
+            conn.putheader(k,v)
+        if body is not None:
+            conn.putheader('Content-Length',str(len(body)))
+        conn.endheaders(body)
+        res=conn.getresponse()
+        data=res.read()
+        conn.close()
+        return res.status,data
+
+    def post(self,path,body,ctype='application/json',**headers):
+        return self.raw('POST',path,body,{'Content-Type':ctype,**headers})
+
+    def test_foreign_host_header_rejected_on_get_and_post(self):
+        self.assertEqual(self.raw('GET','/api/state',headers={'Host':'evil.example'})[0],403)
+        self.assertEqual(self.raw('POST','/api/runs',b'{}',{'Host':'evil.example','Content-Type':'application/json'})[0],403)
+        self.assertEqual(self.raw('GET','/api/health',headers={'Host':f'localhost:{self.port}'})[0],200)
+        self.assertEqual(self.raw('GET','/api/health',headers={'Host':f'[::1]:{self.port}'})[0],200)
+
+    def test_allowed_hosts_env_extends_allowlist(self):
+        with patch.dict('os.environ',{'ALLOWED_HOSTS':'cms, Other.internal'}):
+            self.assertTrue(host_allowed('cms:8031'))
+            self.assertTrue(host_allowed('other.internal'))
+            self.assertFalse(host_allowed('evil.example'))
+        self.assertFalse(host_allowed('cms:8031'))
+
+    def test_static_path_traversal_is_refused(self):
+        for path in ['/..%2f..%2fapp/core.py','/%2e%2e/app/core.py','/../app/core.py','/..%2fDockerfile']:
+            status,body=self.raw('GET',path)
+            self.assertEqual(status,404,path)
+            self.assertNotIn(b'def ',body)
+        self.assertEqual(self.raw('GET','/')[0],200)
+
+    def test_post_body_validation(self):
+        self.assertEqual(self.post('/api/runs',b'{}',ctype='text/plain')[0],415)
+        self.assertEqual(self.post('/api/runs',b'')[0],413)
+        self.assertEqual(self.post('/api/runs',b'x'*100_001)[0],413)
+        self.assertEqual(self.post('/api/runs',b'{not json')[0],400)
+        self.assertEqual(self.post('/api/runs',b'[1]')[0],400)
+        self.assertEqual(self.post('/api/nope',b'{}')[0],404)
+
+    def test_content_length_must_be_numeric(self):
+        status,_=self.raw('POST','/api/runs',None,{'Content-Type':'application/json','Content-Length':'abc'})
+        self.assertEqual(status,400)
+
+    def test_unexpected_error_returns_generic_500(self):
+        with patch.object(self.app,'create',side_effect=RuntimeError('secret internals')), patch('traceback.print_exc'):
+            status,body=self.post('/api/runs',b'{}')
+        self.assertEqual(status,500)
+        self.assertNotIn(b'secret internals',body)
+
+    def test_state_reports_cms_down(self):
+        status,body=self.raw('GET','/api/state')
+        self.assertEqual(status,200)
+        state=json.loads(body)
+        self.assertFalse(state['cms']['connected'])
+        self.assertEqual(state['cms']['pages'],[])
+
+    def test_prompt_switch_validates_and_records_event(self):
+        self.assertEqual(self.post('/api/settings/prompt',b'{"version":"v99"}')[0],400)
+        self.assertEqual(self.post('/api/settings/prompt',b'{"version":"v2"}')[0],200)
+        state=json.loads(self.raw('GET','/api/state')[1])
+        self.assertEqual(state['prompt_version'],'v2')
+        self.assertEqual(state['events'][0]['kind'],'prompt_switched')
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

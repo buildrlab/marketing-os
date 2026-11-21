@@ -33,6 +33,7 @@ services:
     ports: ["127.0.0.1:${CMS_PORT:-8031}:8031"]
     environment:
       PORT: 8031
+      ALLOWED_HOSTS: cms
       DB_PATH: /app/runtime/cms.sqlite
       CMS_KEY: ${CMS_KEY:?Set CMS_KEY in .env (see .env.example)}
     volumes: ["cms-content:/app/runtime"]

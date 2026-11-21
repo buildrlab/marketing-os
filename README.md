@@ -28,7 +28,7 @@ docker compose up -d     # Resume
 docker compose logs app cms
 ```
 
-Ports are bound to your laptop's loopback address. If a port is occupied, copy `.env.example` to `.env`, change `APP_PORT` or `CMS_PORT`, and run the start command again. This is a **local demo**, without authenticated user accounts or production access control. Keep the default local bindings.
+Ports are bound to your laptop's loopback address. If a port is occupied, copy `.env.example` to `.env`, change `APP_PORT` or `CMS_PORT`, and run the start command again. This is a **local demo**, without authenticated user accounts or production access control. Keep the default local bindings. Both services reject requests whose `Host` header is not `localhost`, `127.0.0.1` or `[::1]` (a DNS-rebinding guard); set `ALLOWED_HOSTS=name1,name2` to allow additional hostnames (Compose already does this for the `cms` service name).
 
 ## Try the complete workflow
 

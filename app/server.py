@@ -36,11 +36,27 @@ def page_html(article=None,pages=None):
         content+='</div>'
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="description" content="{e(description)}"><title>{e(title)} · Northstar</title>{metadata}<link rel="stylesheet" href="/cms.css"></head><body><header><a class="brand" href="/">✳ northstar<span>WORK, TOGETHER.</span></a><nav><a href="/">Resources</a><span class="tag">LOCAL CMS DEMO</span></nav></header><main>{content}</main><footer><span>Northstar is a fictional business. All content is demonstration material.</span><span>Powered by BuildrLab MarketingOS</span></footer></body></html>'''
 
+LOCAL_HOSTS={'localhost','127.0.0.1','[::1]'}
+
+def allowed_hosts():
+    """Hostnames (without port) the services answer to; extend with ALLOWED_HOSTS=a,b."""
+    extra={h.strip().lower() for h in os.getenv('ALLOWED_HOSTS','').split(',') if h.strip()}
+    return LOCAL_HOSTS|extra
+
+def host_allowed(host):
+    name=host.strip().lower()
+    if name.startswith('['):
+        name=name.split(']')[0]+']'
+    else:
+        name=name.split(':')[0]
+    return name in allowed_hosts()
+
 def make_handler(role,store,marketing=None,cms=None,cms_key=None):
     if role=='cms' and not cms_key:
         raise ValueError('cms_key is required for the cms role; set CMS_KEY.')
     class Handler(BaseHTTPRequestHandler):
         server_version='MarketingOS/1.0'
+        timeout=15  # drop idle or trickling clients instead of pinning a thread
         def log_message(self,*args):
             pass
 
@@ -71,6 +87,8 @@ def make_handler(role,store,marketing=None,cms=None,cms_key=None):
 
         def do_GET(self):
             try:
+                if not host_allowed(self.headers.get('Host','')):
+                    raise Problem('Host not allowed.',403)
                 path=unquote(urlsplit(self.path).path)
                 if path=='/api/health':
                     return self.respond(200,{'status':'ok','service':role})
@@ -112,6 +130,8 @@ def make_handler(role,store,marketing=None,cms=None,cms_key=None):
         def do_POST(self):
             try:
                 host=self.headers.get('Host','')
+                if not host_allowed(host):
+                    raise Problem('Host not allowed.',403)
                 origin=self.headers.get('Origin')
                 if origin and origin!=f'http://{host}':
                     raise Problem('Cross-origin requests are not allowed.',403)
