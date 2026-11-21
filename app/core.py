@@ -44,11 +44,21 @@ def digest(value):
 def slugify(text):
     return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')[:75] or 'article'
 
+# One list of phrases shared by source screening and the draft fact check.
+INJECTION_PATTERNS=r'ignore (?:all |previous |your )?instructions|reveal (?:the |your )?(?:secret|key)|bypass approval'
+INJECTION_RE=re.compile(INJECTION_PATTERNS,re.I)
+_NUMBER_WORD=r'(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion)'
+NUMBER_RE=re.compile(r'\$?\d{1,3}(?:,\d{3})+(?:\.\d+)?%?|\$?\d+(?:\.\d+)?%?|\b'+_NUMBER_WORD+r'(?:[- ]'+_NUMBER_WORD+r')* (?:percent|per cent)\b',re.I)
+
+def numeric_claims(text):
+    """Numbers as written (digits, comma-grouped, currency, or spelled-out percentages), normalised."""
+    return {re.sub(r'[$,]','',m).lower().replace('-',' ') for m in NUMBER_RE.findall(text)}
+
 def screen_sources(candidates):
     """A narrow demonstration filter, not general prompt-injection detection."""
     approved, quarantined = [], []
     for source in candidates:
-        if re.search(r'ignore (?:all |previous |your )?instructions|bypass approval',source['content'],re.I):
+        if INJECTION_RE.search(source['content']):
             quarantined.append(source)
         else:
             approved.append(source)
@@ -66,6 +76,13 @@ def request_json(url, payload=None, key=None, timeout=10):
     req = Request(url, data=json.dumps(payload).encode() if payload is not None else None, headers=headers)
     with urlopen(req, timeout=timeout) as response:
         return json.load(response)
+
+def cms_error_message(exc):
+    try:
+        message=json.load(exc).get('error')
+    except (ValueError,AttributeError,OSError):
+        message=None
+    return message if isinstance(message,str) and message else f'HTTP {exc.code}.'
 
 def validate_document(doc):
     if not isinstance(doc, dict):
@@ -89,11 +106,11 @@ def validate_document(doc):
 def checks(doc, sources):
     body = ' '.join([doc['title'],doc['description']] + [s['text'] for s in doc['sections']])
     source_by_id = {s['id']:s for s in sources}
-    numbers = set(re.findall(r'\b\d+(?:\.\d+)?%?',body))
-    supported_numbers = set(re.findall(r'\b\d+(?:\.\d+)?%?',' '.join(s['content'] for s in sources)))
+    numbers = numeric_claims(body)
+    supported_numbers = numeric_claims(' '.join(s['content'] for s in sources))
     unknown_numbers = sorted(numbers-supported_numbers)
     unknown_sources = [s['source_id'] for s in doc['sections'] if s['source_id'] not in source_by_id]
-    suspicious = bool(re.search(r'ignore (?:all |previous |your )?instructions|reveal (?:the |your )?(?:secret|key)|bypass approval',body,re.I))
+    suspicious = bool(INJECTION_RE.search(body))
     pii = bool(re.search(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\b\d{3}-\d{2}-\d{4}\b',body))
     verbatim = all(s['source_id'] in source_by_id and s['text'] in source_by_id[s['source_id']]['content'] for s in doc['sections'])
     return [
@@ -125,7 +142,8 @@ class Store:
             self.set_setting('prompt','v1')
 
     def setting(self,key):
-        row=self.db.execute('SELECT value FROM settings WHERE key=?',(key,)).fetchone()
+        with self.lock:
+            row=self.db.execute('SELECT value FROM settings WHERE key=?',(key,)).fetchone()
         return row['value'] if row else None
 
     def set_setting(self,key,value):
@@ -145,13 +163,17 @@ class Store:
         self.db.execute('INSERT INTO events(run_id,kind,data,created) VALUES(?,?,?,?)',(run,kind,json.dumps(details),now()))
 
     def all(self):
-        return [json.loads(r['data']) for r in self.db.execute('SELECT data FROM runs ORDER BY rowid DESC')]
+        with self.lock:
+            return [json.loads(r['data']) for r in self.db.execute('SELECT data FROM runs ORDER BY rowid DESC')]
 
     def history(self):
-        return [{**dict(r),'data':json.loads(r['data'])} for r in self.db.execute('SELECT * FROM events ORDER BY seq DESC LIMIT 200')]
+        with self.lock:
+            return [{**dict(r),'data':json.loads(r['data'])} for r in self.db.execute('SELECT * FROM events ORDER BY seq DESC LIMIT 200')]
 
 class Marketing:
-    def __init__(self,store,cms_url='http://127.0.0.1:8031',cms_key='local-demo-only',seed=True):
+    def __init__(self,store,cms_url='http://127.0.0.1:8031',cms_key=None,seed=True):
+        if not cms_key:
+            raise ValueError('cms_key is required; set CMS_KEY.')
         self.store=store
         self.cms_url=cms_url.rstrip('/')
         self.cms_key=cms_key
@@ -294,6 +316,18 @@ class Marketing:
                 if run['scenario']=='cms_timeout' and not run['delivery_fault_consumed']:
                     run['delivery_fault_consumed']=True
                     raise TimeoutError('Simulated lost CMS acknowledgement')
+            except HTTPError as exc:
+                if 400<=exc.code<500 and exc.code not in (408,429):
+                    # The CMS answered and refused this revision (for example a slug
+                    # collision). Retrying the same revision cannot succeed.
+                    run.update(status='publish_rejected',last_error='CMS rejected publication: '+cms_error_message(exc)+' Edit the draft and publish the new revision.')
+                    self.store.put(run)
+                    self.store.event(identity,'publish_rejected',{'key':key,'http_status':exc.code})
+                    return run
+                run.update(status='publish_failed',last_error='CMS confirmation was not received. Retry safely using the same publication key.')
+                self.store.put(run)
+                self.store.event(identity,'publish_failed',{'key':key,'simulated':False})
+                return run
             except (URLError,TimeoutError,ValueError) as exc:
                 run.update(status='publish_failed',last_error='CMS confirmation was not received. Retry safely using the same publication key.')
                 self.store.put(run)
@@ -344,4 +378,12 @@ class CMS:
             return {'slug':doc['slug'],'revision':revision,'key':key,'published_at':published,'replayed':False}
 
     def pages(self):
-        return [json.loads(r['data']) for r in self.store.db.execute('SELECT data FROM pages ORDER BY created DESC')]
+        # Same connection as publish(): read under the lock so an in-flight
+        # transaction (and a possible rollback) is never observed.
+        with self.store.lock:
+            return [json.loads(r['data']) for r in self.store.db.execute('SELECT data FROM pages ORDER BY created DESC')]
+
+    def page(self,slug):
+        with self.store.lock:
+            row=self.store.db.execute('SELECT data FROM pages WHERE slug=?',(slug,)).fetchone()
+        return json.loads(row['data']) if row else None

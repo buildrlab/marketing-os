@@ -36,9 +36,27 @@ def page_html(article=None,pages=None):
         content+='</div>'
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="description" content="{e(description)}"><title>{e(title)} · Northstar</title>{metadata}<link rel="stylesheet" href="/cms.css"></head><body><header><a class="brand" href="/">✳ northstar<span>WORK, TOGETHER.</span></a><nav><a href="/">Resources</a><span class="tag">LOCAL CMS DEMO</span></nav></header><main>{content}</main><footer><span>Northstar is a fictional business. All content is demonstration material.</span><span>Powered by BuildrLab MarketingOS</span></footer></body></html>'''
 
-def make_handler(role,store,marketing=None,cms=None):
+LOCAL_HOSTS={'localhost','127.0.0.1','[::1]'}
+
+def allowed_hosts():
+    """Hostnames (without port) the services answer to; extend with ALLOWED_HOSTS=a,b."""
+    extra={h.strip().lower() for h in os.getenv('ALLOWED_HOSTS','').split(',') if h.strip()}
+    return LOCAL_HOSTS|extra
+
+def host_allowed(host):
+    name=host.strip().lower()
+    if name.startswith('['):
+        name=name.split(']')[0]+']'
+    else:
+        name=name.split(':')[0]
+    return name in allowed_hosts()
+
+def make_handler(role,store,marketing=None,cms=None,cms_key=None):
+    if role=='cms' and not cms_key:
+        raise ValueError('cms_key is required for the cms role; set CMS_KEY.')
     class Handler(BaseHTTPRequestHandler):
         server_version='MarketingOS/1.0'
+        timeout=15  # drop idle or trickling clients instead of pinning a thread
         def log_message(self,*args):
             pass
 
@@ -69,6 +87,8 @@ def make_handler(role,store,marketing=None,cms=None):
 
         def do_GET(self):
             try:
+                if not host_allowed(self.headers.get('Host','')):
+                    raise Problem('Host not allowed.',403)
                 path=unquote(urlsplit(self.path).path)
                 if path=='/api/health':
                     return self.respond(200,{'status':'ok','service':role})
@@ -78,7 +98,7 @@ def make_handler(role,store,marketing=None,cms=None):
                     if path=='/':
                         return self.respond(200,page_html(pages=cms.pages()),'text/html; charset=utf-8')
                     if path.startswith('/articles/'):
-                        article=next((a for a in cms.pages() if a['slug']==path[len('/articles/'):]),None)
+                        article=cms.page(path[len('/articles/'):])
                         if not article:
                             raise Problem('Article not found.',404)
                         return self.respond(200,page_html(article=article),'text/html; charset=utf-8')
@@ -110,6 +130,8 @@ def make_handler(role,store,marketing=None,cms=None):
         def do_POST(self):
             try:
                 host=self.headers.get('Host','')
+                if not host_allowed(host):
+                    raise Problem('Host not allowed.',403)
                 origin=self.headers.get('Origin')
                 if origin and origin!=f'http://{host}':
                     raise Problem('Cross-origin requests are not allowed.',403)
@@ -129,7 +151,7 @@ def make_handler(role,store,marketing=None,cms=None):
                     raise Problem('Request must be a JSON object.')
                 path=urlsplit(self.path).path
                 if role=='cms':
-                    if not hmac.compare_digest(self.headers.get('X-CMS-Key',''),os.getenv('CMS_KEY','local-demo-only')):
+                    if not hmac.compare_digest(self.headers.get('X-CMS-Key','').encode(),cms_key.encode()):
                         raise Problem('CMS service credential required.',403)
                     if path=='/api/publish':
                         return self.respond(200,cms.publish(data))
@@ -159,8 +181,11 @@ def main():
         raise SystemExit('Choose app or cms')
     port=int(os.getenv('PORT','8030' if role=='app' else '8031'))
     store=Store(os.getenv('DB_PATH',str(ROOT/'runtime'/f'{role}.sqlite')))
-    marketing=Marketing(store,os.getenv('CMS_URL','http://127.0.0.1:8031'),os.getenv('CMS_KEY','local-demo-only')) if role=='app' else None
-    server=ThreadingHTTPServer((os.getenv('HOST','127.0.0.1'),port),make_handler(role,store,marketing,CMS(store) if role=='cms' else None))
+    cms_key=os.getenv('CMS_KEY')
+    if not cms_key:
+        raise SystemExit('CMS_KEY is required. Set it to a long random value (see .env.example).')
+    marketing=Marketing(store,os.getenv('CMS_URL','http://127.0.0.1:8031'),cms_key) if role=='app' else None
+    server=ThreadingHTTPServer((os.getenv('HOST','127.0.0.1'),port),make_handler(role,store,marketing,CMS(store) if role=='cms' else None,cms_key))
     print(f'{role} ready at http://localhost:{port}',flush=True)
     server.serve_forever()
 

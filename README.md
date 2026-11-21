@@ -13,6 +13,7 @@ Install and start Docker Desktop (or Docker Engine with Compose v2), then clone 
 ```sh
 git clone https://github.com/buildrlab/marketing-os.git
 cd marketing-os
+cp .env.example .env   # then set CMS_KEY to a long random value (openssl rand -hex 24)
 docker compose up --build -d --wait
 ```
 
@@ -27,7 +28,7 @@ docker compose up -d     # Resume
 docker compose logs app cms
 ```
 
-Ports are bound to your laptop's loopback address. If a port is occupied, copy `.env.example` to `.env`, change `APP_PORT` or `CMS_PORT`, and run the start command again. This is a **local demo**, without authenticated user accounts or production access control. Keep the default local bindings.
+Ports are bound to your laptop's loopback address. If a port is occupied, copy `.env.example` to `.env`, change `APP_PORT` or `CMS_PORT`, and run the start command again. This is a **local demo**, without authenticated user accounts or production access control. Keep the default local bindings. Both services reject requests whose `Host` header is not `localhost`, `127.0.0.1` or `[::1]` (a DNS-rebinding guard); set `ALLOWED_HOSTS=name1,name2` to allow additional hostnames (Compose already does this for the `cms` service name).
 
 ## Try the complete workflow
 
@@ -74,7 +75,7 @@ docker compose -f compose.yaml -f compose.ollama.yaml up --build -d --wait
 docker compose -f compose.yaml -f compose.ollama.yaml exec ollama ollama pull qwen2.5:1.5b
 ```
 
-This explicitly downloads the model into a persistent volume. The optional overlay uses the official `latest` image; pin an image digest for reproducible deployment. The CPU configuration is portable but can be slow; on a Mac, native Ollama generally makes better use of Apple hardware. The optional service is reachable only inside the Compose network and publishes no host port. Use both `-f` arguments for later start/stop commands when using this option.
+This explicitly downloads the model into a persistent volume. The optional overlay deliberately uses the official `ollama/ollama:latest` image because no tag has been verified for it; pin a tag or image digest in `compose.ollama.yaml` for reproducible deployment. The CPU configuration is portable but can be slow; on a Mac, native Ollama generally makes better use of Apple hardware. The optional service is reachable only inside the Compose network and publishes no host port. Use both `-f` arguments for later start/stop commands when using this option.
 
 ## What a client can inspect
 
@@ -97,6 +98,8 @@ Run the automated workflow suite inside the same Python image:
 docker compose run --rm --no-deps -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -v
 ```
 
+Without Docker, the same suite runs on any Python 3.13 with `python -m unittest discover -s tests -v` from the repository root (no dependencies to install).
+
 Tests use temporary databases and an actual local HTTP CMS server. They do not alter your demo workspace. See [validation notes](docs/validation.md) for the checks actually performed, and [architecture](docs/architecture.md) for design choices and production gaps.
 
 ## Portfolio presentation
@@ -116,6 +119,7 @@ skills/content.json  Workflow definition and prompt versions
 tests/               Isolated workflow integration tests
 docs/                Architecture, validation, demo script and screenshots
 compose.yaml         Two-service local application
+.github/             CI workflow and Dependabot configuration
 compose.ollama.yaml  Optional container-hosted local model
 ```
 
