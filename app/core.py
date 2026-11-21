@@ -67,6 +67,13 @@ def request_json(url, payload=None, key=None, timeout=10):
     with urlopen(req, timeout=timeout) as response:
         return json.load(response)
 
+def cms_error_message(exc):
+    try:
+        message=json.load(exc).get('error')
+    except (ValueError,AttributeError,OSError):
+        message=None
+    return message if isinstance(message,str) and message else f'HTTP {exc.code}.'
+
 def validate_document(doc):
     if not isinstance(doc, dict):
         raise Problem('Content must be a JSON object.')
@@ -151,7 +158,9 @@ class Store:
         return [{**dict(r),'data':json.loads(r['data'])} for r in self.db.execute('SELECT * FROM events ORDER BY seq DESC LIMIT 200')]
 
 class Marketing:
-    def __init__(self,store,cms_url='http://127.0.0.1:8031',cms_key='local-demo-only',seed=True):
+    def __init__(self,store,cms_url='http://127.0.0.1:8031',cms_key=None,seed=True):
+        if not cms_key:
+            raise ValueError('cms_key is required; set CMS_KEY.')
         self.store=store
         self.cms_url=cms_url.rstrip('/')
         self.cms_key=cms_key
@@ -294,6 +303,18 @@ class Marketing:
                 if run['scenario']=='cms_timeout' and not run['delivery_fault_consumed']:
                     run['delivery_fault_consumed']=True
                     raise TimeoutError('Simulated lost CMS acknowledgement')
+            except HTTPError as exc:
+                if 400<=exc.code<500 and exc.code not in (408,429):
+                    # The CMS answered and refused this revision (for example a slug
+                    # collision). Retrying the same revision cannot succeed.
+                    run.update(status='publish_rejected',last_error='CMS rejected publication: '+cms_error_message(exc)+' Edit the draft and publish the new revision.')
+                    self.store.put(run)
+                    self.store.event(identity,'publish_rejected',{'key':key,'http_status':exc.code})
+                    return run
+                run.update(status='publish_failed',last_error='CMS confirmation was not received. Retry safely using the same publication key.')
+                self.store.put(run)
+                self.store.event(identity,'publish_failed',{'key':key,'simulated':False})
+                return run
             except (URLError,TimeoutError,ValueError) as exc:
                 run.update(status='publish_failed',last_error='CMS confirmation was not received. Retry safely using the same publication key.')
                 self.store.put(run)

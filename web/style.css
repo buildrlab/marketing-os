@@ -770,6 +770,7 @@ td:first-child {
   color: #b97b57;
 }
 .badge.publish_failed,
+.badge.publish_rejected,
 .badge.changes_requested,
 .badge.warn {
   background: #fff6e8;

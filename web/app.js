@@ -44,6 +44,7 @@ const labels = {
   blocked: "Needs attention",
   published: "Published",
   publish_failed: "Delivery pending",
+  publish_rejected: "CMS rejected",
   changes_requested: "Changes requested",
 };
 const eventNames = {
@@ -52,6 +53,7 @@ const eventNames = {
   approved: "Revision approved",
   publish_attempt: "Publication requested",
   publish_failed: "CMS acknowledgement missing",
+  publish_rejected: "CMS rejected publication",
   published: "Content published",
   changes_requested: "Changes requested",
   prompt_switched: "Prompt version switched",
@@ -150,7 +152,7 @@ function activities(limit = 4) {
 function overview() {
   const pending = state.runs.filter((r) => r.status === "in_review"),
     blocked = state.runs.filter((r) =>
-      ["blocked", "publish_failed", "changes_requested"].includes(r.status),
+      ["blocked", "publish_failed", "publish_rejected", "changes_requested"].includes(r.status),
     );
   return `${heading("Your content, in motion.", "From shared knowledge to published stories. One accountable workflow.")}<section class="hero"><div class="hero-copy"><div class="eyebrow">THE CONTENT OPERATING SYSTEM</div><h2>Good content starts<br>with <em>shared knowledge.</em></h2><p>Give your team a clear path from a useful idea to a reviewed, published article. Keep the evidence at every step.</p><div class="actions"><button class="button" data-action="new">Create your next story ${icon("arrow")}</button><span class="hero-foot">${icon("check")}No API key needed</span></div></div>${flowArt()}</section><section class="metrics" aria-label="Workspace statistics">${metric("Content workflows", state.runs.length, "Persisted in this workspace", "flow")}${metric("Awaiting review", pending.length, "Your judgment makes the difference", "shield")}${metric("Published articles", state.cms.pages.length, "Live in your local CMS", "globe", true)}${metric("Approved sources", state.sources.length, "Versioned brand knowledge", "book")}</section><div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><h2>Content pipeline <span class="content-count">${state.runs.length}</span></h2><p>Every story has a source. Every release has an owner.</p></div><a href="#content">View all ${icon("arrow")}</a></div><div class="filter-tabs"><button class="filter-tab active" data-action="all-content">Recent workflows</button><a class="filter-tab" href="#approvals">Needs review <span>${pending.length}</span></a><a class="filter-tab" href="#publishing">Published <span>${state.cms.pages.length}</span></a></div>${table(state.runs.slice(0, 5), true)}<div class="table-foot"><span>Sample content for a fictional business</span><span>Updated from live workspace data</span></div></section><section class="panel"><div class="panel-head"><h2>Make the next move</h2>${icon("shield")}</div>${
     pending
@@ -178,6 +180,7 @@ function contentPage(approvals = false) {
           "changes_requested",
           "approved",
           "publish_failed",
+          "publish_rejected",
         ].includes(r.status)) &&
       (filter === "all" || r.status === filter) &&
       r.content.title.toLowerCase().includes(query.toLowerCase()),
