@@ -31,7 +31,7 @@ Keep the local-demo and drafting-mode labels visible. Use the timeout scenario f
 - Keep one unapproved draft, one blocked example and one published article available.
 - Use an explicit demo reviewer label.
 - Show the source drawer and one meaningful check, rather than reading every field.
-- The repository is public at https://github.com/buildrlab/marketing-os and is linked from buildrlab.com/tutorials/marketing-os. Re-review the README and screenshots before each recording.
+- Link the repository only after it has been published and its README/screenshots reviewed.
 - Explain that CMS vendor integration, production identity and deployment are follow-on work.
 
 ## A scoped client pilot this demonstrates
