@@ -36,7 +36,9 @@ def page_html(article=None,pages=None):
         content+='</div>'
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="description" content="{e(description)}"><title>{e(title)} · Northstar</title>{metadata}<link rel="stylesheet" href="/cms.css"></head><body><header><a class="brand" href="/">✳ northstar<span>WORK, TOGETHER.</span></a><nav><a href="/">Resources</a><span class="tag">LOCAL CMS DEMO</span></nav></header><main>{content}</main><footer><span>Northstar is a fictional business. All content is demonstration material.</span><span>Powered by BuildrLab MarketingOS</span></footer></body></html>'''
 
-def make_handler(role,store,marketing=None,cms=None):
+def make_handler(role,store,marketing=None,cms=None,cms_key=None):
+    if role=='cms' and not cms_key:
+        raise ValueError('cms_key is required for the cms role; set CMS_KEY.')
     class Handler(BaseHTTPRequestHandler):
         server_version='MarketingOS/1.0'
         def log_message(self,*args):
@@ -129,7 +131,7 @@ def make_handler(role,store,marketing=None,cms=None):
                     raise Problem('Request must be a JSON object.')
                 path=urlsplit(self.path).path
                 if role=='cms':
-                    if not hmac.compare_digest(self.headers.get('X-CMS-Key',''),os.getenv('CMS_KEY','local-demo-only')):
+                    if not hmac.compare_digest(self.headers.get('X-CMS-Key','').encode(),cms_key.encode()):
                         raise Problem('CMS service credential required.',403)
                     if path=='/api/publish':
                         return self.respond(200,cms.publish(data))
@@ -159,8 +161,11 @@ def main():
         raise SystemExit('Choose app or cms')
     port=int(os.getenv('PORT','8030' if role=='app' else '8031'))
     store=Store(os.getenv('DB_PATH',str(ROOT/'runtime'/f'{role}.sqlite')))
-    marketing=Marketing(store,os.getenv('CMS_URL','http://127.0.0.1:8031'),os.getenv('CMS_KEY','local-demo-only')) if role=='app' else None
-    server=ThreadingHTTPServer((os.getenv('HOST','127.0.0.1'),port),make_handler(role,store,marketing,CMS(store) if role=='cms' else None))
+    cms_key=os.getenv('CMS_KEY')
+    if not cms_key:
+        raise SystemExit('CMS_KEY is required. Set it to a long random value (see .env.example).')
+    marketing=Marketing(store,os.getenv('CMS_URL','http://127.0.0.1:8031'),cms_key) if role=='app' else None
+    server=ThreadingHTTPServer((os.getenv('HOST','127.0.0.1'),port),make_handler(role,store,marketing,CMS(store) if role=='cms' else None,cms_key))
     print(f'{role} ready at http://localhost:{port}',flush=True)
     server.serve_forever()
 

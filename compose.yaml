@@ -8,7 +8,7 @@ services:
       DB_PATH: /app/runtime/app.sqlite
       CMS_URL: http://cms:8031
       CMS_PUBLIC_URL: http://localhost:${CMS_PORT:-8031}
-      CMS_KEY: ${CMS_KEY:-local-demo-only}
+      CMS_KEY: ${CMS_KEY:?Set CMS_KEY in .env (see .env.example)}
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:1.5b}
     extra_hosts: ["host.docker.internal:host-gateway"]
@@ -34,7 +34,7 @@ services:
     environment:
       PORT: 8031
       DB_PATH: /app/runtime/cms.sqlite
-      CMS_KEY: ${CMS_KEY:-local-demo-only}
+      CMS_KEY: ${CMS_KEY:?Set CMS_KEY in .env (see .env.example)}
     volumes: ["cms-content:/app/runtime"]
     healthcheck:
       test:

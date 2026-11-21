@@ -13,6 +13,7 @@ Install and start Docker Desktop (or Docker Engine with Compose v2), then clone 
 ```sh
 git clone https://github.com/buildrlab/marketing-os.git
 cd marketing-os
+cp .env.example .env   # then set CMS_KEY to a long random value (openssl rand -hex 24)
 docker compose up --build -d --wait
 ```
 

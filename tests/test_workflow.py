@@ -13,17 +13,19 @@ from urllib.request import Request, urlopen
 from app.core import CANON, CMS, Marketing, Problem, Store, checks, request_json, screen_sources
 from app.server import make_handler, page_html
 
+KEY='test-only-key-not-a-secret'
+
 class WorkflowTest(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         self.cms_store=Store(Path(self.tmp.name)/'cms.sqlite')
         self.cms=CMS(self.cms_store)
-        self.server=ThreadingHTTPServer(('127.0.0.1',0),make_handler('cms',self.cms_store,cms=self.cms))
+        self.server=ThreadingHTTPServer(('127.0.0.1',0),make_handler('cms',self.cms_store,cms=self.cms,cms_key=KEY))
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True)
         self.thread.start()
         self.url=f'http://127.0.0.1:{self.server.server_port}'
         self.store=Store(Path(self.tmp.name)/'app.sqlite')
-        self.app=Marketing(self.store,self.url,seed=False)
+        self.app=Marketing(self.store,self.url,KEY,seed=False)
 
     def tearDown(self):
         self.server.shutdown()
@@ -200,10 +202,34 @@ class WorkflowTest(unittest.TestCase):
         with self.assertRaises(HTTPError) as caught:
             request_json(self.url+'/api/publish',{'bad':'request'})
         self.assertEqual(caught.exception.code,403)
-        req=Request(self.url+'/api/publish',data=b'{}',headers={'Content-Type':'application/json','X-CMS-Key':'local-demo-only','Origin':'https://example.com'})
+        req=Request(self.url+'/api/publish',data=b'{}',headers={'Content-Type':'application/json','X-CMS-Key':KEY,'Origin':'https://example.com'})
         with self.assertRaises(HTTPError) as caught:
             urlopen(req)
         self.assertEqual(caught.exception.code,403)
+
+    def test_cms_rejection_is_not_reported_as_lost_acknowledgement(self):
+        first=self.approve(self.draft())
+        self.assertEqual(self.app.publish(first['id'],{'revision':first['revision']})['status'],'published')
+        second=self.approve(self.draft())  # same topic, therefore the same slug
+        result=self.app.publish(second['id'],{'revision':second['revision']})
+        self.assertEqual(result['status'],'publish_rejected')
+        self.assertIn('already used by another article',result['last_error'])
+        self.assertNotIn('Retry safely',result['last_error'])
+        self.assertEqual(len(self.cms.pages()),1)
+
+    def test_cms_server_error_remains_retryable(self):
+        r=self.approve(self.draft())
+        err=HTTPError(self.url,503,'unavailable',{},None)
+        with patch('app.core.request_json',side_effect=err):
+            result=self.app.publish(r['id'],{'revision':r['revision']})
+        self.assertEqual(result['status'],'publish_failed')
+        self.assertIn('Retry safely',result['last_error'])
+
+    def test_explicit_cms_key_is_required(self):
+        with self.assertRaises(ValueError):
+            Marketing(self.store,self.url,seed=False)
+        with self.assertRaises(ValueError):
+            make_handler('cms',self.cms_store,cms=self.cms)
 
     def test_render_escapes_html_and_json_script_breakout(self):
         r=self.draft();p=r['content'];p.update(revision=1,published_at='2026-10-29',sources=r['sources'])
