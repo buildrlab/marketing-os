@@ -4,7 +4,7 @@ Validated locally on 29 October 2026 using Docker Desktop on macOS and the deskt
 
 ## Automated suite
 
-**20 tests passed in 10.646 seconds** in the Python 3.13 application image. Full output: [test-results.txt](test-results.txt).
+The suite has grown since the 29 October 2026 Docker run, which recorded 20 tests passing in 10.646 seconds in the Python 3.13 application image ([test-results.txt](test-results.txt) is that dated snapshot only). Run `python -m unittest discover -s tests -v` for the current count and result.
 
 The suite uses isolated temporary SQLite databases and a real HTTP CMS endpoint. It covers:
 
@@ -18,6 +18,10 @@ The suite uses isolated temporary SQLite databases and a real HTTP CMS endpoint.
 - Source fixture quarantine before generation.
 - Prompt version selection/rollback for newly created runs.
 - CMS key and cross-origin rejection; HTML and JSON-LD escaping.
+- Foreign `Host` header rejection, static path traversal, request-body limits, invalid JSON, generic 500 responses, CMS-down state and prompt switching over HTTP.
+- Readers never observing an in-flight CMS publish transaction.
+
+The HTTP-layer and locking cases were added after the 29 October run and were exercised with plain `python -m unittest`, not in the Docker image.
 - Local model schema/usage integration and no sample fallback after invalid model output (mocked model responses in these two automated cases).
 
 ## Live verification
