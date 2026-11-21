@@ -1,4 +1,5 @@
 import copy
+import io
 import json
 import tempfile
 import threading
@@ -10,7 +11,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from app.core import CANON, CMS, Marketing, Problem, Store, checks, request_json, screen_sources
+from app.core import CANON, CMS, Marketing, Problem, Store, checks, cms_error_message, request_json, screen_sources
 from app.server import make_handler, page_html
 
 KEY='test-only-key-not-a-secret'
@@ -224,6 +225,54 @@ class WorkflowTest(unittest.TestCase):
             result=self.app.publish(r['id'],{'revision':r['revision']})
         self.assertEqual(result['status'],'publish_failed')
         self.assertIn('Retry safely',result['last_error'])
+
+    def test_cms_error_message_classification(self):
+        def err(code,body):
+            return HTTPError('http://cms',code,'x',{},io.BytesIO(body))
+        self.assertEqual(cms_error_message(err(409,b'{"error":"Slug taken."}')),'Slug taken.')
+        self.assertEqual(cms_error_message(err(400,b'not json')),'HTTP 400.')
+        self.assertEqual(cms_error_message(err(400,b'{"error":""}')),'HTTP 400.')
+        self.assertEqual(cms_error_message(err(422,b'{"error":42}')),'HTTP 422.')
+        self.assertEqual(cms_error_message(err(404,b'[]')),'HTTP 404.')
+
+    def test_retryable_4xx_statuses_stay_retryable_and_others_are_rejected(self):
+        for code,expected in ((408,'publish_failed'),(429,'publish_failed'),(404,'publish_rejected'),(422,'publish_rejected')):
+            with self.subTest(code=code):
+                r=self.approve(self.draft())
+                err=HTTPError(self.url,code,'x',{},io.BytesIO(b'{}'))
+                with patch('app.core.request_json',side_effect=err):
+                    result=self.app.publish(r['id'],{'revision':r['revision']})
+                self.assertEqual(result['status'],expected)
+
+    def test_rejected_revision_can_be_edited_reapproved_and_published(self):
+        first=self.approve(self.draft())
+        self.app.publish(first['id'],{'revision':first['revision']})
+        second=self.approve(self.draft())
+        rejected=self.app.publish(second['id'],{'revision':second['revision']})
+        self.assertEqual(rejected['status'],'publish_rejected')
+        content=copy.deepcopy(rejected['content']);content['slug']='a-distinct-guide-slug'
+        edited=self.app.edit(second['id'],{'revision':rejected['revision'],'content':content})
+        self.assertIsNone(edited['approval'])
+        again=self.approve(edited)
+        self.assertEqual(self.app.publish(again['id'],{'revision':again['revision']})['status'],'published')
+        self.assertEqual(len(self.cms.pages()),2)
+
+    def test_approval_rejects_stale_revision_and_short_reviewer(self):
+        r=self.draft()
+        with self.assertRaises(Problem) as caught:
+            self.app.approve(r['id'],{'revision':r['revision']+1,'reviewer':'Demo reviewer','attested':True})
+        self.assertEqual(caught.exception.status,409)
+        for reviewer in ('','x','y'*81):
+            with self.subTest(reviewer=reviewer),self.assertRaisesRegex(Problem,'reviewer'):
+                self.app.approve(r['id'],{'revision':r['revision'],'reviewer':reviewer,'attested':True})
+        with self.assertRaisesRegex(Problem,'confirm'):
+            self.app.approve(r['id'],{'revision':r['revision'],'reviewer':'Demo reviewer','attested':'yes'})
+
+    def test_reject_requires_note_of_valid_length(self):
+        r=self.draft()
+        for comment in ('','ab','c'*1001):
+            with self.subTest(length=len(comment)),self.assertRaisesRegex(Problem,'review note'):
+                self.app.reject(r['id'],{'revision':r['revision'],'comment':comment})
 
     def test_explicit_cms_key_is_required(self):
         with self.assertRaises(ValueError):
